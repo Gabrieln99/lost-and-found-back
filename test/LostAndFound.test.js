@@ -167,6 +167,18 @@ describe("LostAndFound", function () {
         contract.connect(other).reportFound(listingId)
       ).to.be.revertedWith("Invalid listing status");
     });
+
+    it("succeeds when an expiration is set but has not yet passed", async function () {
+      const { contract, owner, finder } = await loadFixture(deployFixture);
+      const expiration = (await time.latest()) + 3600;
+      await contract.connect(owner).createListing(CID, expiration, { value: REWARD });
+
+      await contract.connect(finder).reportFound(0);
+
+      const listing = await contract.listings(0);
+      expect(listing.status).to.equal(Status.Reported);
+      expect(listing.finder).to.equal(finder.address);
+    });
   });
 
   describe("rejectReport", function () {
@@ -343,6 +355,25 @@ describe("LostAndFound", function () {
       await expect(
         contract.connect(owner).cancelListing(0)
       ).to.changeEtherBalances([contract, owner], [-REWARD, REWARD]);
+    });
+
+    it("blocks a reentrant call via the ReentrancyGuard on the refund path", async function () {
+      const { contract } = await loadFixture(deployFixture);
+      const Attacker = await ethers.getContractFactory("CancelReentrancyAttacker");
+      const attacker = await Attacker.deploy(await contract.getAddress());
+
+      await attacker.createListing(CID, 0, { value: REWARD });
+
+      // The attacker's receive() tries to re-enter cancelListing while
+      // refunding itself. The ReentrancyGuard reverts that inner call,
+      // which unwinds the refund too, so the whole outer cancelListing
+      // reverts with no funds moved and the listing stays Open.
+      await expect(attacker.cancel()).to.be.revertedWith("Refund failed");
+
+      expect(await ethers.provider.getBalance(await contract.getAddress())).to.equal(REWARD);
+      const listing = await contract.listings(0);
+      expect(listing.status).to.equal(Status.Open);
+      expect(listing.reward).to.equal(REWARD);
     });
   });
 
