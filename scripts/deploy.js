@@ -6,6 +6,7 @@ async function main() {
   await lostAndFound.waitForDeployment();
 
   console.log("LostAndFound deployed to:", await lostAndFound.getAddress());
+  console.log("Deployment transaction hash:", lostAndFound.deploymentTransaction().hash);
 }
 
 main().catch((error) => {

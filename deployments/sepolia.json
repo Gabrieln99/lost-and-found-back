@@ -1,0 +1,11 @@
+{
+  "network": "sepolia",
+  "chainId": 11155111,
+  "contractName": "LostAndFound",
+  "address": "0x1945e05F857505C4282168d7Fa2974b36353B8d1",
+  "deployerAddress": "0xeed275c7BC01aa527589A3B42827616F0bb55EE3",
+  "transactionHash": "0xa4ca23a84d0dd6511ce9ecae56db7d23a6d241870056c6515ba738bec72dcd93",
+  "deployedAt": "2026-09-04T14:09:12.000Z",
+  "workflowRunUrl": "https://github.com/Gabrieln99/lost-and-found-back/actions/runs/33881981615",
+  "blockExplorerUrl": "https://eth-sepolia.blockscout.com/address/0x1945e05F857505C4282168d7Fa2974b36353B8d1"
+}
