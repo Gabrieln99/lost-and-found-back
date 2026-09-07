@@ -2,13 +2,11 @@ from aiohttp import web
 from pydantic import ValidationError
 
 from .pinata import PinataUploadError
-from .schemas import ErrorResponse, UploadFileMeta, UploadResponse
+from .responses import error_response
+from .schemas import UploadFileMeta, UploadResponse
+from .upload_utils import FileTooLargeError, read_multipart_file
 
 MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
-
-
-def error_response(message: str, status: int) -> web.Response:
-    return web.json_response(ErrorResponse(error=message).model_dump(), status=status)
 
 
 async def upload_handler(request: web.Request) -> web.Response:
@@ -29,18 +27,11 @@ async def upload_handler(request: web.Request) -> web.Response:
     except ValidationError as exc:
         return error_response(str(exc), status=400)
 
-    chunks = []
-    total_size = 0
-    while True:
-        chunk = await field.read_chunk()
-        if not chunk:
-            break
-        total_size += len(chunk)
-        if total_size > MAX_FILE_SIZE_BYTES:
-            return error_response("File exceeds the 10 MB upload limit", status=413)
-        chunks.append(chunk)
+    try:
+        file_bytes = await read_multipart_file(field, MAX_FILE_SIZE_BYTES)
+    except FileTooLargeError:
+        return error_response("File exceeds the 10 MB upload limit", status=413)
 
-    file_bytes = b"".join(chunks)
     if not file_bytes:
         return error_response("Uploaded file is empty", status=400)
 

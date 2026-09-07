@@ -1,6 +1,10 @@
 import aiohttp
 
-PINATA_UPLOAD_URL = "https://api.pinata.cloud/pinning/pinFileToIPFS"
+PINATA_PIN_FILE_URL = "https://api.pinata.cloud/pinning/pinFileToIPFS"
+PINATA_PIN_JSON_URL = "https://api.pinata.cloud/pinning/pinJSONToIPFS"
+
+# Backwards-compatible alias; keep existing imports/tests working.
+PINATA_UPLOAD_URL = PINATA_PIN_FILE_URL
 
 
 class PinataUploadError(Exception):
@@ -17,19 +21,33 @@ class PinataClient:
         form.add_field("file", file_bytes, filename=filename, content_type=content_type)
         headers = {"Authorization": f"Bearer {self._jwt}"}
 
+        data = await self._post(PINATA_PIN_FILE_URL, headers=headers, data=form)
+        return self._extract_cid(data)
+
+    async def upload_json(self, content: dict) -> str:
+        headers = {
+            "Authorization": f"Bearer {self._jwt}",
+            "Content-Type": "application/json",
+        }
+        payload = {"pinataContent": content}
+
+        data = await self._post(PINATA_PIN_JSON_URL, headers=headers, json=payload)
+        return self._extract_cid(data)
+
+    async def _post(self, url: str, **kwargs) -> dict:
         try:
-            async with self._session.post(
-                PINATA_UPLOAD_URL, data=form, headers=headers
-            ) as response:
+            async with self._session.post(url, **kwargs) as response:
                 if response.status != 200:
                     body = await response.text()
                     raise PinataUploadError(
                         f"Pinata responded with status {response.status}: {body}"
                     )
-                data = await response.json()
+                return await response.json()
         except aiohttp.ClientError as exc:
             raise PinataUploadError(f"Network error contacting Pinata: {exc}") from exc
 
+    @staticmethod
+    def _extract_cid(data: dict) -> str:
         cid = data.get("IpfsHash")
         if not cid:
             raise PinataUploadError("Pinata response did not include an IpfsHash")
