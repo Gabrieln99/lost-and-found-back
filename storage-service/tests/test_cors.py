@@ -27,8 +27,9 @@ def image_form(content=b"fake-image-bytes", filename="pet.png", content_type="im
     return form
 
 
-def listing_form(description="Lost cat", location="Central Park"):
+def listing_form(title="Lost cat", description="Lost cat", location="Central Park"):
     form = image_form()
+    form.add_field("title", title)
     form.add_field("description", description)
     form.add_field("location", location)
     return form

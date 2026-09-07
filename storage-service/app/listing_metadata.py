@@ -10,8 +10,8 @@ MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB, mirrors upload.py's limit
 
 
 async def listing_metadata_handler(request: web.Request) -> web.Response:
-    """POST /listing-metadata: accepts an image (field "file") plus
-    "description" and "location" text fields, pins the image to Pinata,
+    """POST /listing-metadata: accepts an image (field "file") plus "title",
+    "description", and "location" text fields, pins the image to Pinata,
     bundles it with the text fields into a JSON document, pins that JSON
     to Pinata too, and returns the JSON's CID -- this is the CID that goes
     on-chain as LostAndFound.createListing's itemCID, so the contract
@@ -44,7 +44,7 @@ async def listing_metadata_handler(request: web.Request) -> web.Response:
                 image_bytes = await read_multipart_file(field, MAX_FILE_SIZE_BYTES)
             except FileTooLargeError:
                 return error_response("File exceeds the 10 MB upload limit", status=413)
-        elif field.name in ("description", "location"):
+        elif field.name in ("title", "description", "location"):
             text_fields[field.name] = await field.text()
 
     if image_meta is None or not image_bytes:
@@ -52,6 +52,7 @@ async def listing_metadata_handler(request: web.Request) -> web.Response:
 
     try:
         listing_fields = ListingFields(
+            title=text_fields.get("title", ""),
             description=text_fields.get("description", ""),
             location=text_fields.get("location", ""),
         )
@@ -65,6 +66,7 @@ async def listing_metadata_handler(request: web.Request) -> web.Response:
         )
         metadata_cid = await pinata_client.upload_json(
             {
+                "title": listing_fields.title,
                 "description": listing_fields.description,
                 "location": listing_fields.location,
                 "image": f"ipfs://{image_cid}",

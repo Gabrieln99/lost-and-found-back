@@ -25,11 +25,14 @@ def listing_form(
     content=b"fake-image-bytes",
     filename="pet.png",
     content_type="image/png",
+    title="Lost cat",
     description="Lost cat, orange tabby",
     location="Central Park",
 ):
     form = aiohttp.FormData()
     form.add_field("file", content, filename=filename, content_type=content_type)
+    if title is not None:
+        form.add_field("title", title)
     if description is not None:
         form.add_field("description", description)
     if location is not None:
@@ -60,7 +63,7 @@ async def test_listing_metadata_pins_json_with_image_and_text_fields(aiohttp_cli
 
         await cli.post(
             "/listing-metadata",
-            data=listing_form(description="Lost dog", location="5th Ave"),
+            data=listing_form(title="Lost dog!", description="Lost dog", location="5th Ave"),
         )
 
         # Inspect the actual pinJSONToIPFS request body via aioresponses' recorded calls.
@@ -74,11 +77,30 @@ async def test_listing_metadata_pins_json_with_image_and_text_fields(aiohttp_cli
         sent_payload = recorded[0].kwargs["json"]
         assert sent_payload == {
             "pinataContent": {
+                "title": "Lost dog!",
                 "description": "Lost dog",
                 "location": "5th Ave",
                 "image": "ipfs://bafyimagecid",
             }
         }
+
+
+async def test_listing_metadata_rejects_missing_title(aiohttp_client, monkeypatch):
+    cli = await make_client(aiohttp_client, monkeypatch)
+
+    with mocked_pinata():
+        resp = await cli.post("/listing-metadata", data=listing_form(title=None))
+
+    assert resp.status == 400
+
+
+async def test_listing_metadata_rejects_blank_title(aiohttp_client, monkeypatch):
+    cli = await make_client(aiohttp_client, monkeypatch)
+
+    with mocked_pinata():
+        resp = await cli.post("/listing-metadata", data=listing_form(title="   "))
+
+    assert resp.status == 400
 
 
 async def test_listing_metadata_rejects_missing_description(aiohttp_client, monkeypatch):
