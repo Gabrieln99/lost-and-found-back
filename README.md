@@ -34,10 +34,17 @@ transaction hash, and block explorer link.
 
 ## Storage service
 
-`storage-service/` is an aiohttp REST API. This first pass only handles
-image upload: `POST /upload` (multipart/form-data, field name `file`)
-uploads an image to Pinata and returns its IPFS CID. Owner/finder
-contact storage (SQLite) isn't built yet.
+`storage-service/` is an aiohttp REST API. Owner/finder contact storage
+(SQLite) isn't built yet. Two endpoints so far:
+
+- `POST /upload` (multipart/form-data, field `file`) — pins a raw image to
+  Pinata, returns its IPFS CID. Generic utility.
+- `POST /listing-metadata` (multipart/form-data, fields `file`,
+  `description`, `location`) — pins the image, bundles it with the text
+  fields into a JSON document (`{description, location, image:
+  "ipfs://<image CID>"}`), pins that JSON too, and returns the JSON's CID.
+  This is the CID the frontend passes on-chain as `createListing`'s
+  `itemCID`.
 
 ### Commands
 
