@@ -24,10 +24,11 @@ class ListingFields(BaseModel):
     Limits mirror the frontend form's own validation (defense in depth --
     the backend never trusts client-side validation alone)."""
 
+    title: str = Field(min_length=1, max_length=100)
     description: str = Field(min_length=1, max_length=500)
     location: str = Field(min_length=1, max_length=200)
 
-    @field_validator("description", "location")
+    @field_validator("title", "description", "location")
     @classmethod
     def must_not_be_blank(cls, value: str) -> str:
         if not value.strip():
