@@ -32,6 +32,17 @@ npx hardhat run scripts/deploy.js
 Deployed to Sepolia — see `deployments/sepolia.json` for the address,
 transaction hash, and block explorer link.
 
+Independently verify any `createListing` transaction's on-chain state
+(status, owner, itemCID, reward, timestamps) — reads the deployed address
+from `deployments/sepolia.json` by default:
+
+```bash
+TX_HASH=0x... npx hardhat run scripts/check-listing.js --network sepolia
+```
+
+Requires `SEPOLIA_RPC_URL` in `.env` (root of this repo, not
+`storage-service/.env`) — read-only, no private key needed.
+
 ## Storage service
 
 `storage-service/` is an aiohttp REST API. Owner/finder contact storage
