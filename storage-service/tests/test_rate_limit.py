@@ -1,24 +1,50 @@
+import time
+
 import aiohttp
 from aioresponses import aioresponses
+from eth_account import Account
+from eth_account.messages import encode_defunct
 
 from app import create_app
 from app.pinata import PINATA_PIN_FILE_URL, PINATA_PIN_JSON_URL
+from app.signing import build_read_signable_message, build_signable_message
 
 LOCAL_PASSTHROUGH = ["http://127.0.0.1"]
+
+SENDER = Account.create()
 
 
 def mocked_pinata():
     return aioresponses(passthrough=LOCAL_PASSTHROUGH)
 
 
+def sign_text(text: str, private_key) -> str:
+    signed = Account.sign_message(encode_defunct(text=text), private_key=private_key)
+    sig_hex = signed.signature.hex()
+    return sig_hex if sig_hex.startswith("0x") else f"0x{sig_hex}"
+
+
 async def make_client(aiohttp_client, monkeypatch, requests_per_minute=None):
     monkeypatch.setenv("PINATA_JWT", "test-jwt-token")
+    monkeypatch.setenv("SEPOLIA_RPC_URL", "http://rpc.example")
+    # MESSAGES_DB_PATH defaults to ":memory:" via conftest.py's autouse fixture.
     if requests_per_minute is None:
         monkeypatch.delenv("RATE_LIMIT_REQUESTS_PER_MINUTE", raising=False)
     else:
         monkeypatch.setenv("RATE_LIMIT_REQUESTS_PER_MINUTE", str(requests_per_minute))
     app = create_app()
-    return await aiohttp_client(app)
+    cli = await aiohttp_client(app)
+
+    async def fake_get_listing_parties(_listing_id):
+        return SENDER.address, "0x0000000000000000000000000000000000000000"
+
+    cli.app["contract_reader"].get_listing_parties = fake_get_listing_parties
+    return cli
+
+
+def message_body(listing_id, timestamp, text):
+    message = build_signable_message(listing_id, timestamp, text)
+    return {"timestamp": timestamp, "body": text, "signature": sign_text(message, SENDER.key)}
 
 
 def image_form(content=b"fake-image-bytes", filename="pet.png", content_type="image/png"):
@@ -128,4 +154,49 @@ async def test_preflight_requests_are_never_rate_limited(aiohttp_client, monkeyp
 
     for _ in range(5):
         resp = await cli.options("/upload")
+        assert resp.status == 200
+
+
+async def test_sending_messages_is_rate_limited(aiohttp_client, monkeypatch):
+    cli = await make_client(aiohttp_client, monkeypatch, requests_per_minute=2)
+    now = int(time.time())
+
+    resp1 = await cli.post("/listings/3/messages", json=message_body(3, now, "one"))
+    resp2 = await cli.post("/listings/3/messages", json=message_body(3, now + 1, "two"))
+    resp3 = await cli.post("/listings/3/messages", json=message_body(3, now + 2, "three"))
+
+    assert resp1.status == 201
+    assert resp2.status == 201
+    assert resp3.status == 429
+
+
+async def test_message_sending_shares_the_limit_with_uploads(aiohttp_client, monkeypatch):
+    # Different endpoints, same abuse-prevention budget -- a client can't
+    # dodge the limit by alternating between uploading and messaging.
+    cli = await make_client(aiohttp_client, monkeypatch, requests_per_minute=1)
+    now = int(time.time())
+
+    with mocked_pinata() as mocked:
+        mocked.post(PINATA_PIN_FILE_URL, payload={"IpfsHash": "bafytestcid"})
+        resp1 = await cli.post("/upload", data=image_form())
+
+    resp2 = await cli.post("/listings/3/messages", json=message_body(3, now, "hello"))
+
+    assert resp1.status == 200
+    assert resp2.status == 429
+
+
+async def test_reading_messages_is_never_rate_limited(aiohttp_client, monkeypatch):
+    cli = await make_client(aiohttp_client, monkeypatch, requests_per_minute=1)
+    # Use up the one allowed write.
+    now = int(time.time())
+    await cli.post("/listings/3/messages", json=message_body(3, now, "hello"))
+
+    for _ in range(5):
+        read_now = int(time.time())
+        message = build_read_signable_message(3, read_now)
+        resp = await cli.get(
+            "/listings/3/messages",
+            params={"timestamp": str(read_now), "signature": sign_text(message, SENDER.key)},
+        )
         assert resp.status == 200

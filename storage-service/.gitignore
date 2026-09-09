@@ -5,3 +5,7 @@ __pycache__/
 .venv/
 venv/
 .env
+
+# Local SQLite database file(s) (see MESSAGES_DB_PATH) -- never commit
+# real message data; tests always use an in-memory database instead.
+*.db

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class UploadFileMeta(BaseModel):
@@ -38,3 +38,39 @@ class ListingFields(BaseModel):
 
 class ErrorResponse(BaseModel):
     error: str
+
+
+class MessageIn(BaseModel):
+    """POST body for submitting a signed owner<->finder chat message.
+    listingId deliberately isn't a field here -- it comes from the URL
+    path, which is what the signature is verified against, so it can't be
+    spoofed independently of the endpoint being authorized for."""
+
+    timestamp: int
+    body: str = Field(min_length=1, max_length=2000)
+    signature: str = Field(min_length=1)
+
+    @field_validator("body")
+    @classmethod
+    def must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("must not be blank")
+        return value
+
+
+class MessageOut(BaseModel):
+    """A stored message, serialized with by_alias=True so the JSON uses
+    listingId (camelCase, matching the rest of this project's on-chain
+    field naming) while the Python side stays snake_case."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: int
+    listing_id: int = Field(alias="listingId")
+    sender: str
+    body: str
+    timestamp: int
+
+
+class MessageListResponse(BaseModel):
+    messages: list[MessageOut]
