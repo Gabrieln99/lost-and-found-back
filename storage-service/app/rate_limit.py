@@ -1,3 +1,4 @@
+import re
 import time
 from collections import defaultdict, deque
 from collections.abc import Awaitable, Callable
@@ -8,12 +9,22 @@ from .responses import error_response
 
 Handler = Callable[[web.Request], Awaitable[web.StreamResponse]]
 
-# Only the two upload endpoints burn Pinata quota; there's nothing else to
-# protect (and OPTIONS preflight never reaches this middleware -- see
-# cors_middleware, which answers it directly).
-RATE_LIMITED_PATHS = {"/upload", "/listing-metadata"}
+# The two upload endpoints (fixed paths, burn Pinata quota) plus sending a
+# chat message (dynamic path, /listings/{id}/messages -- guards against DB
+# write spam). Reading a thread (GET, same path) is deliberately exempt:
+# it's a cheap, idempotent read, same reasoning as not rate-limiting any
+# other GET in this service. OPTIONS preflight never reaches this
+# middleware at all -- see cors_middleware, which answers it directly.
+RATE_LIMITED_FIXED_PATHS = {"/upload", "/listing-metadata"}
+_MESSAGES_POST_PATH = re.compile(r"^/listings/\d+/messages$")
 
 WINDOW_SECONDS = 60.0
+
+
+def _is_rate_limited_request(request: web.Request) -> bool:
+    if request.path in RATE_LIMITED_FIXED_PATHS:
+        return True
+    return request.method == "POST" and bool(_MESSAGES_POST_PATH.match(request.path))
 
 
 def _client_id(request: web.Request) -> str:
@@ -38,7 +49,7 @@ def rate_limit_middleware(requests_per_minute: int):
 
     @web.middleware
     async def middleware(request: web.Request, handler: Handler) -> web.StreamResponse:
-        if requests_per_minute <= 0 or request.path not in RATE_LIMITED_PATHS:
+        if requests_per_minute <= 0 or not _is_rate_limited_request(request):
             return await handler(request)
 
         client_id = _client_id(request)

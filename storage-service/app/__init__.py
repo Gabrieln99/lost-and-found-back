@@ -4,8 +4,11 @@ import aiohttp
 from aiohttp import web
 
 from .config import load_config
+from .contract_reader import ContractReader
 from .cors import cors_middleware
 from .listing_metadata import listing_metadata_handler
+from .messages import get_messages_handler, post_message_handler
+from .messages_db import init_db
 from .pinata import PinataClient
 from .rate_limit import rate_limit_middleware
 from .upload import upload_handler
@@ -15,6 +18,21 @@ async def _pinata_session_ctx(app: web.Application) -> AsyncIterator[None]:
     async with aiohttp.ClientSession() as session:
         app["pinata_client"] = PinataClient(jwt=app["config"].pinata_jwt, session=session)
         yield
+
+
+async def _messages_db_ctx(app: web.Application) -> AsyncIterator[None]:
+    conn = await init_db(app["config"].messages_db_path)
+    app["messages_db"] = conn
+    yield
+    await conn.close()
+
+
+async def _contract_reader_ctx(app: web.Application) -> AsyncIterator[None]:
+    config = app["config"]
+    reader = ContractReader(config.sepolia_rpc_url, config.contract_address)
+    app["contract_reader"] = reader
+    yield
+    await reader.close()
 
 
 def create_app() -> web.Application:
@@ -30,6 +48,10 @@ def create_app() -> web.Application:
     )
     app["config"] = config
     app.cleanup_ctx.append(_pinata_session_ctx)
+    app.cleanup_ctx.append(_messages_db_ctx)
+    app.cleanup_ctx.append(_contract_reader_ctx)
     app.router.add_post("/upload", upload_handler)
     app.router.add_post("/listing-metadata", listing_metadata_handler)
+    app.router.add_post("/listings/{listing_id}/messages", post_message_handler)
+    app.router.add_get("/listings/{listing_id}/messages", get_messages_handler)
     return app
